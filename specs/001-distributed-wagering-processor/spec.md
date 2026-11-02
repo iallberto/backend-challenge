@@ -35,6 +35,10 @@ falhas de processo."
 
 ## User Scenarios & Testing *(mandatory)*
 
+**Glossário**: nesta spec, "carteira" = *wallet*, "extrato" = *ledger* (livro-razão),
+"aguardando referência" = `PENDING_REFERENCE`. Plano, contratos e código usam os termos em
+inglês.
+
 **Atores**:
 
 - **Provedor de jogos**: sistema externo que envia operações de uma rodada para a carteira do
@@ -186,8 +190,8 @@ final igual ao inicial.
 7. **Given** um ROLLBACK cuja referência ainda não existe, **When** ele chega, **Then** fica
    em "aguardando referência" e é retentado automaticamente com espera crescente; se a
    referência chegar dentro do limite, a reversão é aplicada.
-8. **Given** um ROLLBACK aguardando referência, **When** o limite de tentativas ou tempo se
-   esgota, **Then** ele é rejeitado com código de referência inexistente e um evento de
+8. **Given** uma operação (ROLLBACK, REFUND, WIN ou LOSS) aguardando referência, **When** o
+   limite de tentativas ou tempo se esgota, **Then** ela é rejeitada com código de referência inexistente e um evento de
    rejeição é emitido.
 9. **Given** um REFUND ou ROLLBACK sem identificador de referência, **When** ele chega,
    **Then** é rejeitado como payload inválido.
@@ -326,7 +330,9 @@ estar "pronto"; verificar que as métricas mínimas são expostas.
 - Mesmo provedor + id externo com chave de idempotência diferente (ex.: provedor mudou o
   formato da chave): conflito, sem segundo débito.
 - Valores-limite: `0.00`, `0.01`, valores muito grandes, `"25.0"`, `"25.000"`, `"1e3"`,
-  `"NaN"`, `"Infinity"`, string vazia.
+  `"NaN"`, `"Infinity"`, string vazia. `0.00` só é válido em LOSS e no saldo inicial; em BET,
+  WIN, REFUND e ROLLBACK é `INVALID_MONEY` (FR-002a). Valor acima de `NUMERIC(19,2)` também é
+  `INVALID_MONEY`.
 - Processo cai antes do commit (nada deve ter efeito) e depois do commit (efeito único,
   evento publicado depois).
 - Banco ou fila indisponíveis temporariamente durante consumo e publicação: nada é gravado e
@@ -348,6 +354,10 @@ estar "pronto"; verificar que as métricas mínimas são expostas.
   decimais fixas e moeda explícita, recebidos e devolvidos como string decimal.
 - **FR-002**: O sistema MUST rejeitar valores inválidos: NaN, infinito, notação científica,
   vazio, mais de 2 casas decimais e negativos em contratos de entrada.
+- **FR-002a**: O valor de uma operação MUST ser maior que zero para BET, WIN, REFUND e ROLLBACK,
+  e maior ou igual a zero para LOSS; o saldo inicial de uma carteira MUST ser maior ou igual a
+  zero. Valores fora dessas faixas MUST ser rejeitados como payload inválido (`INVALID_MONEY`),
+  antes de qualquer gravação.
 - **FR-003**: O sistema MUST rejeitar qualquer operação cuja moeda difira da moeda da carteira.
 
 **Carteira**
@@ -372,15 +382,15 @@ estar "pronto"; verificar que as métricas mínimas são expostas.
 - **FR-011**: O sistema MUST aceitar BET, WIN, LOSS, REFUND e ROLLBACK de provedores; OPENING
   MUST ser rejeitado em qualquer entrada externa.
 - **FR-012**: BET MUST debitar o valor ou ser rejeitada por saldo insuficiente.
-- **FR-013**: WIN MUST creditar o valor; quando referenciar uma BET, a referência MUST ser
-  validada como nas reversões.
+- **FR-013**: WIN MUST creditar o valor. Regras de referência de WIN e LOSS: ver FR-050.
 - **FR-014**: LOSS MUST ser registrado como processado sem mover saldo.
 - **FR-015**: REFUND e ROLLBACK MUST exigir identificador de referência do provedor.
 - **FR-016**: A referência MUST ser resolvida pelo par (provedor, id externo referenciado) e
   pertencer ao mesmo provedor, jogador, carteira, moeda e rodada.
 - **FR-017**: REFUND MUST referenciar somente BET processada; ROLLBACK MUST referenciar BET,
   WIN ou REFUND processados e aplicar o efeito inverso da referência.
-- **FR-018**: Uma referência MUST NOT ser revertida duas vezes pelo mesmo tipo de operação.
+- **FR-018**: Uma referência MUST NOT ser revertida mais de uma vez, por nenhum tipo de
+  reversão (regra detalhada em FR-049, mais restritiva que o "mesmo tipo" do enunciado).
 - **FR-019**: O valor de REFUND/ROLLBACK MUST ser igual ao da referência.
 - **FR-020**: Uma reversão que deixaria o saldo negativo MUST ser rejeitada com código próprio,
   distinto do de aposta sem saldo, e permanecer auditável.
@@ -394,8 +404,9 @@ estar "pronto"; verificar que as métricas mínimas são expostas.
   e retentada automaticamente com espera exponencial (base 1 s, teto 5 min, com variação
   aleatória) por até 1 hora desde a chegada. Base, teto e prazo MUST ser configuráveis, para que
   os testes usem segundos.
-- **FR-023**: Esgotado o limite de tentativas/tempo, a reversão MUST ser rejeitada com código
-  de referência inexistente (`REFERENCE_NOT_FOUND`) e um evento de rejeição emitido. (Limite
+- **FR-023**: Esgotado o limite de tentativas/tempo, a operação aguardando referência (reversão,
+  WIN ou LOSS) MUST ser rejeitada com código de referência inexistente (`REFERENCE_NOT_FOUND`) e
+  um evento de rejeição emitido. (Limite
   padrão adotado: ver Assumptions.)
 - **FR-023a**: Se a referência existe mas está em estado terminal diferente de processada
   (rejeitada ou falha), a operação que a referencia MUST ser rejeitada imediatamente com
@@ -413,6 +424,9 @@ estar "pronto"; verificar que as métricas mínimas são expostas.
 - **FR-027**: Mesma chave com impressão digital diferente MUST ser tratada como conflito.
 - **FR-028**: A deduplicação MUST sobreviver a reinícios e funcionar entre múltiplas
   instâncias.
+- **FR-026a**: O replay de uma operação que ainda está aguardando referência MUST devolver o
+  estado **atual** da transação: se ela já foi resolvida, devolve o resultado final (processada
+  ou rejeitada), sinalizado como replay; se não, devolve "aguardando referência".
 - **FR-028a**: O par (provedor, id externo da transação) MUST ser único, além da chave de
   idempotência. Uma submissão com chave nova para um par já existente MUST ser tratada como
   conflito (distinto de replay e de rejeição de negócio), sem efeito financeiro. Assim a
@@ -445,8 +459,8 @@ estar "pronto"; verificar que as métricas mínimas são expostas.
 - **FR-035**: Eventos MUST ser publicados somente após a confirmação e MUST NOT ser perdidos
   em caso de queda; podem ser publicados mais de uma vez, sempre com o mesmo identificador.
 - **FR-036**: O sistema MUST emitir, no mínimo: transação processada (inclusive LOSS),
-  transação rejeitada, saldo alterado (somente quando o saldo muda) e transação aguardando
-  referência. Eventos MUST ter envelope versionado com id, tipo, versão, agregado,
+  transação rejeitada, transação com falha permanente (`FAILED`), saldo alterado (somente
+  quando o saldo muda) e transação aguardando referência. Eventos MUST ter envelope versionado com id, tipo, versão, agregado,
   correlação, causa e instante, e valores monetários como string decimal.
 - **FR-037**: A publicação MUST funcionar com múltiplos publicadores simultâneos.
 
@@ -502,9 +516,11 @@ estar "pronto"; verificar que as métricas mínimas são expostas.
   com provedor de identidade externo (credenciais de cliente máquina-a-máquina com token
   assinado) fica documentada e plugável, sem alterar o domínio.
 - **FR-048a**: Independentemente do mecanismo de autenticação, uma operação síncrona cujo
-  provedor declarado no conteúdo difira da identidade do chamador MUST ser rejeitada com código
-  de falha próprio (ex.: `PROVIDER_MISMATCH`), sem efeito financeiro. Esta é uma regra de
-  autorização de domínio, obrigatória e testada.
+  provedor declarado no conteúdo difira da identidade do chamador MUST ser recusada com código
+  de falha próprio (`PROVIDER_MISMATCH`, categoria 403), sem efeito financeiro e **sem ser
+  gravada**, verificada antes da idempotência. Gravar a recusa permitiria a um provedor bloquear
+  chaves de idempotência de outro (o replay devolveria a recusa ao dono legítimo). Esta é uma
+  regra de autorização de domínio, obrigatória e testada.
 - **FR-049**: Cada transação MUST ser revertida no máximo uma vez, por qualquer tipo de
   reversão (REFUND ou ROLLBACK). Uma segunda reversão da mesma referência MUST ser rejeitada
   com código próprio (ex.: `REFERENCE_ALREADY_REVERSED`), inclusive quando as duas chegam
@@ -567,8 +583,9 @@ estar "pronto"; verificar que as métricas mínimas são expostas.
 - **SC-008**: O provedor consegue decidir entre reenviar, corrigir ou desistir apenas pelo
   tipo de resposta e código de falha, sem interpretar texto, para 100% dos cenários de erro
   documentados.
-- **SC-009**: Carteiras diferentes processadas em paralelo não esperam umas pelas outras: o
-  tempo total para N carteiras independentes cresce bem menos que N vezes o tempo de uma.
+- **SC-009**: Carteiras diferentes processadas em paralelo não esperam umas pelas outras: 10
+  carteiras recebendo 20 operações cada, todas em paralelo, terminam em menos de 3 vezes o tempo
+  de uma única carteira recebendo as mesmas 20 operações.
 - **SC-010**: Uma divergência injetada entre saldo e extrato é detectada e sinalizada pela
   reconciliação em 100% dos casos, sem correção automática.
 

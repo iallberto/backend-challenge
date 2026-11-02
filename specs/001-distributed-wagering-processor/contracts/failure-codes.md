@@ -7,7 +7,7 @@ mesma chave** pode dar outro resultado.
 | Código | Categoria | HTTP | Persistido | `retryable` | Significado / ação do provedor |
 |---|---|---|---|---|---|
 | `INVALID_PAYLOAD` | validação | 400 | não | não | Campo ausente ou com formato inválido. Corrigir e reenviar. |
-| `INVALID_MONEY` | validação | 400 | não | não | Valor fora do formato decimal de 2 casas, negativo, NaN, etc. |
+| `INVALID_MONEY` | validação | 400 | não | não | Valor fora do formato decimal de 2 casas, negativo, NaN, acima de 17 dígitos inteiros, ou zero em BET/WIN/REFUND/ROLLBACK. |
 | `MISSING_IDEMPOTENCY_KEY` | validação | 400 | não | não | Header `Idempotency-Key` ausente. |
 | `MISSING_REFERENCE` | validação | 400 | não | não | REFUND/ROLLBACK sem `referenceExternalTransactionId`. |
 | `OPENING_NOT_ALLOWED` | validação | 400 | não | não | `OPENING` é interno. |

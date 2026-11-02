@@ -88,7 +88,9 @@ Transição a partir de estado terminal → `InvalidTransactionStateError` (erro
 
 **Ordem de validação no caso de uso** (o primeiro que falha define o `failureCode`):
 
-1. Formato do payload → 400 (não persiste).
+1. Formato do payload → 400 (não persiste). Inclui a faixa de valor do FR-002a: `amount > 0`
+   (`>= 0` em LOSS) e no máximo 17 dígitos inteiros, para que nunca chegue ao `CHECK` do banco
+   um valor que viraria erro 500.
 2. `kind = OPENING` vindo de fora → 400 `OPENING_NOT_ALLOWED`.
 3. Identidade do chamador ≠ `providerId` → 403 `PROVIDER_MISMATCH`, **sem persistir**. Se a
    recusa fosse gravada, o `provider-a` poderia "envenenar" a chave `provider-b:tx-1`: quando o
