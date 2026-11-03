@@ -9,6 +9,35 @@ interrompidas por quedas.
 - Decisões, trade-offs e limitações: [ARCHITECTURE.md](ARCHITECTURE.md)
 - Especificação, plano e contratos (Spec Kit): [specs/001-distributed-wagering-processor/](specs/001-distributed-wagering-processor/)
 
+## Como este projeto foi construído
+
+O desenvolvimento seguiu **Spec-Driven Development** com o [GitHub Spec Kit](https://github.com/github/spec-kit):
+a especificação e as decisões vieram antes do código, e o código foi escrito para cumpri-las.
+Usei IA como ferramenta de implementação, instruída por esses artefatos, para reduzir ambiguidade
+e erros. Cada decisão abaixo foi discutida e tomada por mim, com justificativa registrada.
+
+| Etapa | Artefato | O que contém |
+|---|---|---|
+| 1. Princípios | [constitution.md](.specify/memory/constitution.md) | 8 regras invioláveis derivadas das restrições e falhas eliminatórias do desafio |
+| 2. Especificação | [spec.md](specs/001-distributed-wagering-processor/spec.md) | 9 histórias de usuário, requisitos testáveis, critérios de sucesso, casos de borda |
+| 3. Clarificação | spec.md, seção *Clarifications* | Ambiguidades do enunciado resolvidas antes de codar (ver abaixo) |
+| 4. Plano | [plan.md](specs/001-distributed-wagering-processor/plan.md), [research.md](specs/001-distributed-wagering-processor/research.md) | 17 decisões técnicas com alternativas avaliadas |
+| 5. Design | [data-model.md](specs/001-distributed-wagering-processor/data-model.md), [contracts/](specs/001-distributed-wagering-processor/contracts/) | Schema com constraints, API, mensagens, taxonomia de códigos de falha |
+| 6. Tarefas | [tasks.md](specs/001-distributed-wagering-processor/tasks.md) | 109 tarefas por história, testes antes da implementação |
+| 7. Análise cruzada | `/speckit-analyze` | 16 inconsistências encontradas e corrigidas entre spec, plano e tarefas |
+
+Algumas decisões que nasceram de ler o enunciado de forma crítica:
+
+- **Reversão única por transação**: a regra literal ("não revertida duas vezes pelo *mesmo tipo*")
+  permitia REFUND + ROLLBACK da mesma BET, devolvendo o valor em dobro. Adotei "no máximo uma
+  reversão, de qualquer tipo", garantida por índice único parcial.
+- **Dupla unicidade** (`idempotency_key` e `providerId + externalTransactionId`): sem ela, um
+  provedor que mudasse o formato da chave debitaria a mesma aposta duas vezes.
+- **`PROVIDER_MISMATCH` não é gravado**: gravar a recusa permitiria a um provedor bloquear chaves de
+  idempotência de outro.
+- **WIN sem BET é aceito** (free spins, entrega fora de ordem): a wallet é autoridade do dinheiro,
+  não do resultado do jogo.
+
 ## Stack
 
 Bun 1.x · TypeScript estrito · NestJS 11 · PostgreSQL 16 · MikroORM 6 · AWS SQS (LocalStack 3.8) ·
