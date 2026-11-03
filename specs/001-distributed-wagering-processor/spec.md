@@ -583,9 +583,11 @@ estar "pronto"; verificar que as métricas mínimas são expostas.
 - **SC-008**: O provedor consegue decidir entre reenviar, corrigir ou desistir apenas pelo
   tipo de resposta e código de falha, sem interpretar texto, para 100% dos cenários de erro
   documentados.
-- **SC-009**: Carteiras diferentes processadas em paralelo não esperam umas pelas outras: 10
-  carteiras recebendo 20 operações cada, todas em paralelo, terminam em menos de 3 vezes o tempo
-  de uma única carteira recebendo as mesmas 20 operações.
+- **SC-009**: Carteiras diferentes não esperam umas pelas outras: com uma carteira A bloqueada
+  por uma transação longa, 50 operações em outras 10 carteiras completam com sucesso (em menos
+  de 4 s) enquanto a operação em A continua aguardando. (Revisado na implementação: a versão por
+  razão de tempo dependia de CPU e pool da máquina; esta prova a ausência de lock global de forma
+  determinística.)
 - **SC-010**: Uma divergência injetada entre saldo e extrato é detectada e sinalizada pela
   reconciliação em 100% dos casos, sem correção automática.
 
